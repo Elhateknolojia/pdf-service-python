@@ -1,7 +1,10 @@
 import os
 import logging
 from flask import Flask, request, Response
-from weasyprint import HTML
+from playwright.sync_api import sync_playwright
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
 app = Flask(__name__)
 
@@ -12,6 +15,7 @@ def generate_pdf():
         logging.info("Headers: %s", dict(request.headers))
         logging.info("Content-Type: %s", request.content_type)
 
+        # Decode HTML body
         html_content = request.data.decode("utf-8")
         logging.info("HTML length: %d", len(html_content))
         logging.info("HTML preview: %s", html_content[:200])
@@ -20,8 +24,25 @@ def generate_pdf():
             logging.error("❌ Error: Empty HTML content received")
             return Response("No HTML content provided", status=400)
 
-        pdf = HTML(string=html_content).write_pdf()
-        logging.info("✅ PDF generated successfully, size: %d bytes", len(pdf))
+        # Launch Playwright
+        logging.info("🖥️ Launching Chromium via Playwright...")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                args=["--no-sandbox", "--disable-setuid-sandbox"],
+                headless=True
+            )
+            page = browser.new_page()
+
+            # Set HTML content
+            logging.info("📄 Setting page content...")
+            page.set_content(html_content, wait_until="networkidle")
+
+            # Generate PDF
+            logging.info("🖨️ Generating PDF...")
+            pdf = page.pdf(format="A4", print_background=True)
+            logging.info("✅ PDF generated successfully, size: %d bytes", len(pdf))
+
+            browser.close()
 
         return Response(
             pdf,
